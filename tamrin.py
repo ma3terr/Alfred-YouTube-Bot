@@ -1,46 +1,47 @@
 import telebot
-from pytube import Search
-import yt_dlp as ydlp
-import os
+import yt_dlp
 import re
+import os
+import glob
+import time
 
-# 1. توکن API
-# توکن خود را در خط زیر وارد کنید
-BOT_TOKEN = "8456082831:AAHIwdxsaqusimIfDBfAPqnEVgTFoZmZFcM" 
+# --- ۱. API Key ---
+# توکن خود را در خط زیر وارد کنید. (توکن را بدون هیچ فضای خالی در ابتدا یا انتها وارد کنید)
+BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE" 
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# تابع برای فرار از کاراکترهای مارک‌داون (Markdown)
+# --- ۲. تابع اصلاح شده فرار از کاراکترهای Markdown (حل خطای نمایش) ---
+# این تابع، تمام کاراکترهای خاص Markdown V1 را برای نمایش صحیح خنثی (Escape) می‌کند.
 def escape_markdown_v1(text):
-    # کاراکترهای قابل فرار در MarkdownV1
-    escape_chars = r"[_*`\[\]()~>#+=|{}.!]"
-    # جایگزینی با کاراکتر فرار (\) قبل از کاراکترهای خاص
-    return re.sub(r'([{}])'.format(re.escape(escape_chars)), r'\\\1', text)
+    # لیست کامل کاراکترهای خاص
+    escape_chars = r'[_*`\[\]()~>#+\-={}.!]'
+    return re.sub(escape_chars, r'\\\g<0>', text)
 
-
-# تابع برای ویرایش پیام (برای به‌روزرسانی وضعیت دانلود)
-def edit_message(chat_id, message_id, text, parse_mode=None):
+# --- ۳. تابع اصلاح شده ویرایش پیام (برای هندل کردن خطای Markdown) ---
+def edit_message(chat_id, message_id, text, parse_mode='Markdown'):
     try:
+        # سعی می‌کند پیام موجود را ویرایش کند
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
             parse_mode=parse_mode
         )
-    except telebot.apihelper.ApiTelegramException as e:
-        # اگر خطای Bad Request به دلیل مشکل در Markdown باشد
+    except Exception as e:
+        # اگر ویرایش ناموفق بود (مثلاً خطای Bad Request به خاطر Markdown نامعتبر)
         if "Bad Request" in str(e):
-            # اگر خطای Markdown رخ داد، فقط متن ساده را ارسال کنید
-            bot.send_message(chat_id, "⚠️ خطای نمایش: نتوانستم متن را با فرمت نمایش دهم. لطفا کد را بررسی کنید.", disable_notification=True)
+            # اگر خطای Markdown بود، یک پیام جدید با خطای نمایش می‌فرستد
+            bot.send_message(chat_id, "❌ خطای نمایش: نتوانستم متن را با فرمت Markdown نمایش دهم. لطفا کد را بررسی کنید.")
         else:
-            # سایر خطاها
-            pass
+            # سایر خطاهای ناموفق در ویرایش پیام
+            bot.send_message(chat_id, "⚠️ خطا در به‌روزرسانی وضعیت.")
 
-# تابع برای ارسال صوت پس از دانلود
-def send_audio_from_url(url, title=None, initial_message_id=None):
+# --- ۴. تابع ارسال فایل صوتی (حل خطای FFmpeg محلی) ---
+def send_audio_from_url(url, title, initial_message_id=None):
     chat_id = initial_message_id.chat.id
     
-    # 1. ساخت آپشن‌های ytdlp
-    # توجه: گزینه 'ffmpeg_location' حذف شد تا از FFmpeg سرور استفاده شود.
+    # تنظیمات yt-dlp (ydl_opts)
     ydl_opts = {
         'format': 'bestaudio/best',
         'postprocessors': [{
@@ -48,165 +49,146 @@ def send_audio_from_url(url, title=None, initial_message_id=None):
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
-        
-        # 'ffmpeg_location': r'C:\ProgramFiles\ffmpeg\ffmpeg.exe', # این خط حذف شد
-        
-        'nocheckcertificate': True,
-        'no_warnings': True,
-        'retries': 3,
-        'force_generic_extractor': True,
-        'skip_download': False,
-        'outtmpl': f'downloads/{chat_id}_audio_temp.%(ext)s', # مسیر ذخیره موقت
+        # مسیر محلی FFmpeg حذف شد تا روی سرور Railway کار کند.
+        'outtmpl': f'downloads/{chat_id}_audio_temp.%(ext)s', 
         'noplaylist': True,
         'quiet': True,
     }
 
-    title = ""
+    # مرحله ۱: استخراج اطلاعات و دانلود
     try:
-        # 2. استخراج اطلاعات اولیه و عنوان آهنگ
-        with ydlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+        # پیام 'در حال دانلود'
+        escaped_title = escape_markdown_v1(title)
+        edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود آهنگ: *{escaped_title}*...")
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=True)
             
-            # سعی در یافتن بهترین عنوان ممکن
-            if info.get('title'):
-                title = info.get('title')
-            elif info.get('uploader') and 'youtube' not in info.get('uploader').lower():
-                 title = f"{info.get('uploader')} - {info.get('title')}"
-            else:
-                 title = info.get('title') or "فایل دانلود شده"
-            
+            # استخراج عنوان و نام خواننده برای کپشن
+            final_title = info_dict.get('title', 'Unknown Title')
+            artist = info_dict.get('artist') or info_dict.get('uploader')
+            caption = final_title
+            if artist:
+                caption = f"{final_title} - {artist}"
+
     except Exception as e:
-        # اگر خطای استخراج اطلاعات رخ داد (مثلا: ویدیو خصوصی است یا پیدا نشد)
-        edit_message(chat_id, initial_message_id, f"❌ خطای دانلود: نتوانستم اطلاعات ویدیو را استخراج کنم. ({str(e)})")
+        error_message = f"❌ خطای دانلود: نتوانستم فایل را دانلود کنم. \n{str(e)[:150]}"
+        edit_message(chat_id, initial_message_id.message_id, escape_markdown_v1(error_message))
         return
 
-    # 3. دانلود فایل
-    escaped_title = escape_markdown_v1(title)
-    
-    # پیام در حال دانلود
-    edit_message(chat_id, initial_message_id, f"🎶 در حال دانلود آهنگ **{escaped_title}** ...")
+    # مرحله ۲: پیدا کردن فایل دانلود شده
+    downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.*")
+    if not downloaded_files:
+        edit_message(chat_id, initial_message_id.message_id, "❌ خطای فایل: نتوانستم فایل دانلود شده را پیدا کنم.")
+        return
 
-    file_path = f'downloads/{chat_id}_audio_temp.mp3'
+    audio_file_path = downloaded_files[0]
 
+    # مرحله ۳: ارسال فایل و حذف فایل موقت
     try:
-        with ydlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-            
-        # 4. جستجوی فایل دانلود شده
-        # ytdlp فایل را ذخیره کرده، باید نام فایل ذخیره شده را پیدا کنیم
-        downloaded_files = [f for f in os.listdir('./downloads/') if f.startswith(f'{chat_id}_audio_temp') and f.endswith('.mp3')]
+        # پیام 'در حال ارسال'
+        edit_message(chat_id, initial_message_id.message_id, f"⬆️ در حال ارسال آهنگ: *{escape_markdown_v1(final_title)}*...")
+
+        with open(audio_file_path, 'rb') as audio_file:
+            bot.send_audio(
+                chat_id,
+                audio_file,
+                caption=escape_markdown_v1(caption),
+                title=final_title
+            )
+
+        # حذف پیام‌های موقت و فایل صوتی پس از ارسال موفق
+        bot.delete_message(chat_id, initial_message_id.message_id)
+        os.remove(audio_file_path)
         
-        if downloaded_files:
-            file_path = os.path.join('./downloads/', downloaded_files[0])
-            
-            # 5. ارسال آهنگ
-            edit_message(chat_id, initial_message_id, f"📤 در حال ارسال آهنگ **{escaped_title}**...")
-            
-            with open(file_path, 'rb') as audio_file:
-                bot.send_audio(chat_id, audio_file, caption=title)
-            
-            # 6. حذف فایل
-            os.remove(file_path)
-            edit_message(chat_id, initial_message_id, f"✅ آهنگ **{escaped_title}** با موفقیت ارسال شد.")
-            
-        else:
-            # اگر فایل پیدا نشد
-            edit_message(chat_id, initial_message_id, f"❌ خطای دانلود: فایل صوتی پس از دانلود پیدا نشد.")
+        # حذف هر فایل mp3 که ممکن است از دانلود قبلی مانده باشد
+        for f in glob.glob(f"downloads/{chat_id}_audio_temp.mp3"):
+            os.remove(f)
 
 
     except Exception as e:
-        # در صورت بروز هر گونه خطای دانلود یا ارسال
-        error_message = f"❌ خطای دانلود یا ارسال آهنگ: {str(e)}"
-        edit_message(chat_id, initial_message_id, error_message)
-        
-    finally:
-         # تمیزکاری (حذف فایل‌های موقت اگر مانده باشند)
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        error_message = f"❌ خطای ارسال: نتوانستم فایل را ارسال کنم. \n{str(e)[:150]}"
+        bot.send_message(chat_id, escape_markdown_v1(error_message))
+        # پاکسازی پس از خطا
+        if os.path.exists(audio_file_path):
+            os.remove(audio_file_path)
 
-
-# تابع جستجو و ارسال لینک (برای متن‌های عادی)
-def search_from_text(query, initial_message_id=None):
+# --- ۵. تابع جستجو از متن ---
+def search_from_text(message, query, initial_message_id=None):
     chat_id = initial_message_id.chat.id
     
-    # پیام در حال جستجو
-    edit_message(chat_id, initial_message_id, f"🔎 در حال جستجوی **{query}**...")
+    # به‌روزرسانی پیام 'در حال جستجو'
+    escaped_query = escape_markdown_v1(query)
+    edit_message(chat_id, initial_message_id.message_id, f"🔍 در حال جستجوی *{escaped_query}*...")
 
     try:
-        s = Search(query)
-        s.run_search()
+        # استفاده از Search در yt-dlp
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+            # جستجوی یک نتیجه با فرمت 'ytsearch1:'
+            info_dict = ydl.extract_info(f"ytsearch1:{query}", download=False)
         
-        if s.results:
-            video_url = s.results[0].watch_url
-            video_title = s.results[0].title
+        if 'entries' and info_dict['entries']:
+            video_info = info_dict['entries'][0]
+            video_link = video_info.get('webpage_url')
+            video_title = video_info.get('title')
             
-            # 1. پیدا کردن لینک یوتیوب
-            escaped_title = escape_markdown_v1(video_title)
+            # ساخت پاسخ با استفاده از Markdown V1 و فرار از کاراکترها
+            escaped_video_title = escape_markdown_v1(video_title)
+            response = f"✅ نتیجه پیدا شد: \n"
+            response += f"عنوان: *{escaped_video_title}*\n"
+            response += f"لینک: [ویدیو]({video_link})"
             
-            response = f"🎶 **{escaped_title}**\n\n"
-            response += f"[مشاهده در یوتیوب]({video_url})"
+            edit_message(chat_id, initial_message_id.message_id, response, parse_mode='Markdown')
             
-            edit_message(chat_id, initial_message_id, response, parse_mode='Markdown')
-            
-            # 2. فراخوانی دانلود آهنگ
-            send_audio_from_url(video_url, video_title, initial_message_id)
+            # شروع دانلود و ارسال
+            send_audio_from_url(video_link, video_title, initial_message_id)
 
         else:
-            # اگر نتیجه‌ای یافت نشد
-            edit_message(chat_id, initial_message_id, f"❌ متاسفانه منبعی نتیجه‌ای در جستجوی شما پیدا نشد. دوباره امتحان کنید.")
-
+            edit_message(chat_id, initial_message_id.message_id, "❌ متأسفانه نتیجه‌ای در جستجو پیدا نشد.")
+            
     except Exception as e:
-        error_message = f"❌ خطای جستجوی یوتیوب: {str(e)}"
-        edit_message(chat_id, initial_message_id, error_message)
+        error_message = f"❌ خطای جستجو: در طول جستجو خطایی رخ داد. \n{str(e)[:150]}"
+        edit_message(chat_id, initial_message_id.message_id, escape_markdown_v1(error_message))
 
+# --- ۶. هندلرها ---
 
-# --- بخش مدیریت پیام‌ها ---
-
-# دستور /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "🎶 سلام! نام آهنگ یا لینک (یوتیوب/اینستاگرام/ساندکلاد) را برایم بفرست تا دانلود کرده و برایتان ارسال کنم.")
+    bot.reply_to(message, "👋 سلام! لینک آهنگ یوتیوب را بفرستید یا متن جستجو را برای من ارسال کنید.")
 
-
-# مدیریت پیام‌های متنی
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     user_text = message.text
-    chat_id = message.chat.id
     
-    # 1. ساخت پوشه دانلودها اگر موجود نیست
-    if not os.path.exists('./downloads'):
-        os.makedirs('./downloads')
+    # پیام اولیه 'در حال شروع فرآیند...'
+    initial_msg = bot.send_message(message.chat.id, "⏳ در حال شروع فرآیند...")
+    initial_message_id = initial_msg.message_id
     
-    # 2. ارسال پیام اولیه (در حال شروع)
-    initial_msg = bot.send_message(chat_id, "⏳ در حال شروع فرآیند...")
+    # پوشه دانلودها را چک و ایجاد می‌کند
+    if not os.path.exists('downloads'):
+        os.makedirs('downloads')
+
+    # اگر ورودی با 'http' شروع شود، فرض می‌کنیم لینک است
+    if user_text.startswith('http'):
+        edit_message(message.chat.id, initial_message_id, f"🔗 لینک دریافت شد، در حال پردازش...")
+        send_audio_from_url(user_text, 'Unknown Title', initial_message_id)
     
-    # 3. اگر لینک باشد
-    if user_text.startswith(('http://', 'https://')):
-        # بررسی می‌کنیم که آیا اینستاگرام است یا خیر
-        if 'instagram.com' in user_text.lower():
-            edit_message(chat_id, initial_msg, "📸 لینک اینستاگرام دریافت شد. در حال تلاش برای دانلود...")
-        else:
-            edit_message(chat_id, initial_msg, "🔗 لینک دریافت شد. در حال دانلود آهنگ...")
-            
-        send_audio_from_url(user_text, initial_msg)
-        
-    # 4. اگر متن باشد (جستجو)
+    # در غیر این صورت، جستجو می‌کنیم
     else:
-        search_from_text(user_text, initial_msg)
+        search_from_text(message, user_text, initial_message_id)
 
-# مدیریت پیام‌های صوتی (Voice)
-@bot.message_handler(content_types=['voice'])
-def handle_voice_message(message):
-    bot.reply_to(message, "🎧 لطفا نام آهنگ را تایپ کنید یا لینک آن را ارسال نمایید.")
+# --- ۷. اجرای ربات ---
 
+# حذف هرگونه فایل موقت mp3 قدیمی که ممکن است از اجراهای قبلی مانده باشد
+for f in glob.glob("downloads/*_audio_temp.mp3"):
+    try:
+        os.remove(f)
+    except:
+        pass
 
-# شروع به کار ربات
-if __name__ == '__main__':
-    # این خط را برای اطمینان از حذف فایل‌های موقت اجرا می‌کنیم
-    if not os.path.exists('./downloads'):
-        os.makedirs('./downloads')
+print("Bot is running...")
+# برای اطمینان از حذف فایل‌های قدیمی، یک مکث کوتاه اضافه می‌شود
+time.sleep(1) 
 
-    print("Bot is running...")
-    bot.infinity_polling()
-
+# اجرای بی‌نهایت ربات (Polling)
+bot.infinity_polling()
