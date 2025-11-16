@@ -6,7 +6,7 @@ import re
 
 # 1. توکن API
 # توکن خود را در خط زیر وارد کنید
-BOT_TOKEN = "8466843178:AAEeTyT0T8-FawP0kNoXhoAcR2p3hVvTaK8" 
+BOT_TOKEN = "8456082831:AAHIwdxsaqusimIfDBfAPqnEVgTFoZmZFcM" 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # تابع برای فرار از کاراکترهای مارک‌داون (Markdown)
@@ -209,3 +209,4 @@ if __name__ == '__main__':
 
     print("Bot is running...")
     bot.infinity_polling()
+
