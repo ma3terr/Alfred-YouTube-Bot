@@ -62,7 +62,7 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
         # فقط بهترین فایل صوتی را مستقیماً دانلود می‌کند (بدون نیاز به تبدیل و FFmpeg)
         'format': 'bestaudio', 
         
-        # بخش postprocessors که نیاز به FFmpeg داشت حذف شده است
+        # توجه: بخش postprocessors که نیاز به FFmpeg داشت، در اینجا حذف شده است.
         
         # تنظیم نام فایل
         'outtmpl': f'downloads/{chat_id}_audio_temp.%(ext)s', 
