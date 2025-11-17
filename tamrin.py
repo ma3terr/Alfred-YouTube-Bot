@@ -24,11 +24,11 @@ def escape_markdown_v2(text):
         return ""
     # لیست کاراکرهای خاص تلگرام برای Markdown V2
     escape_chars = r'([_*[\]()~>#+=|{}.!-])'
-    # کاراکرهای خاص را با یک بک اسلش (\) قبل از آن جایگزین می کند
+    # کاراکترهای خاص را با یک بک اسلش (\) قبل از آن جایگزین می کند
     return re.sub(escape_chars, r'\\\1', text)
 
 # تابع ویرایش پیام با مدیریت خطا (رفع خطای parse_mode)
-def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
+def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'): 
     try:
         bot.edit_message_text(
             chat_id=chat_id,
@@ -53,18 +53,18 @@ def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
             pass
 
 # --------------------------------------
-# --- ۳. تابع ارسال فایل صوتی (اصلاح‌شده برای اینستاگرام و FFmpeg) ---
+# --- ۳. تابع ارسال فایل صوتی (بدون FFmpeg) ---
 # --------------------------------------
 def send_audio_from_url(url, title, initial_message_id, chat_id): 
     
-    # تنظیمات yt-dlp (با فعالسازی استخراج صدا از ویدیو)
+    # تنظیمات yt-dlp (فقط دانلود بهترین فایل صوتی مستقیم)
     ydl_opts = {
-        # تلاش برای دانلود بهترین ویدیو و صدا، یا بهترین فرمت کلی. 
-        # این برای اینستاگرام ضروری است زیرا آنها استریم صوتی جداگانه نمی‌دهند.
-        # پس از دانلود، Postprocessor آن را به MP3 تبدیل خواهد کرد.
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+        # فقط بهترین فایل صوتی را مستقیماً دانلود می‌کند (بدون نیاز به تبدیل و FFmpeg)
+        'format': 'bestaudio', 
         
-        # آدرس فایل خروجی قبل از پردازش نهایی (به عنوان ویدیو)
+        # بخش postprocessors که نیاز به FFmpeg داشت حذف شده است
+        
+        # تنظیم نام فایل
         'outtmpl': f'downloads/{chat_id}_audio_temp.%(ext)s', 
         'noplaylist': True,
         'quiet': True,
@@ -72,15 +72,6 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
         },
-        
-        # --- فعالسازی مجدد FFmpeg Postprocessor برای تبدیل به MP3 ---
-        # **توجه: برای کارکرد این بخش، FFmpeg باید در Railway نصب شده باشد.**
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        # -----------------------------------------------------------
     }
 
     audio_file_path = None
@@ -88,20 +79,18 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
     try:
         # پیام 'در حال دانلود'
         escaped_title = escape_markdown_v2(title)
-        edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود و استخراج آهنگ: *{escaped_title}*...") 
+        edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود آهنگ: *{escaped_title}*...") 
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # --- ممنوعیت اینستاگرام حذف شده است ---
-            
             os.makedirs('downloads', exist_ok=True) 
 
-            # دانلود و تبدیل (این مرحله فایل نهایی .mp3 را تولید می‌کند)
+            # دانلود
             info_dict = ydl.extract_info(url, download=True)
             
-            # پیدا کردن فایل دانلود شده (باید .mp3 باشد)
-            downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.mp3")
+            # پیدا کردن فایل دانلود شده
+            downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.*")
             if not downloaded_files:
-                raise Exception("فایل صوتی نهایی (.mp3) پیدا نشد. (خطای تبدیل توسط FFmpeg یا لینک نامعتبر)")
+                raise Exception("نتوانستم فایل دانلود شده را پیدا کنم. (خطای File Find یا فرمت غیرقابل دانلود)")
                 
             audio_file_path = downloaded_files[0]
             
@@ -140,7 +129,7 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
                 chat_id,
                 audio_file,
                 caption=caption,
-                visible_file_name=f"{final_title}.mp3"
+                visible_file_name=f"{final_title}.mp3" # تلاش برای ارسال به عنوان MP3
             )
 
         # حذف پیام اولیه پس از ارسال موفق
@@ -201,19 +190,17 @@ def send_welcome(message):
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     user_text = message.text
-    chat_id = message.chat.id # <--- استخراج صحیح chat_id
+    chat_id = message.chat.id
     
     initial_msg = bot.send_message(chat_id, "⏳ در حال شروع فرآیند...")
     
     # اگر ورودی با 'http' شروع شود، فرض می‌کنیم لینک است
     if user_text.startswith('http'):
         edit_message(chat_id, initial_msg.message_id, f"🔗 لینک دریافت شد، در حال پردازش...")
-        # ارسال chat_id استخراج شده
         send_audio_from_url(user_text, 'Unknown Title', initial_msg, chat_id) 
     
     # در غیر این صورت، جستجو می‌کنیم
     else:
-        # ارسال chat_id استخراج شده
         search_from_text(message, user_text, initial_msg, chat_id)
         
 # --------------------------
@@ -235,5 +222,3 @@ if __name__ == '__main__':
     print("Bot is running...")
     # اجرای بی‌نهایت ربات (Polling)
     bot.infinity_polling()
-
-
