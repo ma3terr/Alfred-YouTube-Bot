@@ -55,21 +55,19 @@ def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
 # --------------------------------------
 # --- ۳. تابع ارسال فایل صوتی (اصلاح‌شده) ---
 # --------------------------------------
-# تغییر: chat_id مستقیماً به عنوان ورودی دریافت می‌شود تا خطای Attribute Error رفع شود
 def send_audio_from_url(url, title, initial_message_id, chat_id): 
     
     # تنظیمات yt-dlp (بدون نیاز به FFmpeg)
     ydl_opts = {
-        # فقط بهترین فایل صوتی را مستقیماً دانلود می‌کند (بدون تبدیل)
         'format': 'bestaudio', 
-        
-        # **بخش postprocessors که نیاز به FFmpeg داشت حذف شده است**
-        
-        # تنظیم نام فایل
         'outtmpl': f'downloads/{chat_id}_audio_temp.%(ext)s', 
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
+        # اضافه کردن User-Agent برای بهبود شانس دانلود از سایت های سختگیر مانند اینستاگرام
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+        }
     }
 
     audio_file_path = None
@@ -80,11 +78,7 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
         edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود آهنگ: *{escaped_title}*...") 
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            
-            # --- حذف شرط ممنوعیت اینستاگرام برای تلاش در دانلود ---
-            # if "instagram.com" in url:
-            #     raise Exception("دانلود اینستاگرام پشتیبانی نمی‌شود. لطفا لینک یوتیوب بفرستید.")
-            # ----------------------------------------------------
+            # --- شرط ممنوعیت اینستاگرام حذف شده است تا دانلود انجام شود ---
             
             os.makedirs('downloads', exist_ok=True) 
 
@@ -94,7 +88,8 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
             # پیدا کردن فایل دانلود شده
             downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.*")
             if not downloaded_files:
-                raise Exception("نتوانستم فایل دانلود شده را پیدا کنم. (خطای File Find)")
+                # اگر دانلود شکست بخورد، این خطا فعال می‌شود
+                raise Exception("فایل صوتی دانلود نشد. (احتمالاً لینک اینستاگرام مشکل دارد یا خصوصی است.)")
                 
             audio_file_path = downloaded_files[0]
             
@@ -108,15 +103,17 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
             caption = escape_markdown_v2(caption) 
 
     except Exception as e:
-        # مدیریت خطای دانلود
-        error_message = f"❌ خطای دانلود یا ارسال آهنگ: نتوانستم فایل را دانلود کنم. \n دلیل: {escape_markdown_v2(str(e)[:250])}"
-        try:
-            # حذف پیام اولیه برای تمیزی
-            bot.delete_message(chat_id, initial_message_id.message_id)
-        except:
-            pass 
+        # مدیریت خطای دانلود (اصلاح نهایی: برای نمایش خطای واضح)
+        error_message = f"❌ خطای دانلود: نتوانستم فایل را دانلود کنم. \n دلیل: {escape_markdown_v2(str(e)[:250])}"
         
-        bot.send_message(chat_id, error_message, parse_mode='MarkdownV2') 
+        # --- تغییر مهم: ویرایش پیام اولیه برای نمایش خطا ---
+        try:
+            # سعی می کنیم پیام اولیه 'در حال دانلود' را ویرایش کنیم.
+            edit_message(chat_id, initial_message_id.message_id, error_message, parse_mode='MarkdownV2')
+        except:
+            # اگر ویرایش نشد (مثلاً پیام حذف شده بود)، یک پیام جدید ارسال می‌کنیم.
+            bot.send_message(chat_id, error_message, parse_mode='MarkdownV2')
+        # --------------------------------------------------
         
         if audio_file_path and os.path.exists(audio_file_path):
             os.remove(audio_file_path)
@@ -137,6 +134,7 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
                 visible_file_name=f"{final_title}.mp3"
             )
 
+        # حذف پیام اولیه پس از ارسال موفق
         bot.delete_message(chat_id, initial_message_id.message_id)
         
     except Exception as e:
@@ -151,7 +149,6 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
 # ----------------------------------
 # --- ۴. تابع جستجو از متن (اصلاح‌شده) ---
 # ----------------------------------
-# تغییر: chat_id مستقیماً به عنوان ورودی دریافت می‌شود
 def search_from_text(message, query, initial_message_id, chat_id):
     
     escaped_query = escape_markdown_v2(query)
@@ -229,4 +226,3 @@ if __name__ == '__main__':
     print("Bot is running...")
     # اجرای بی‌نهایت ربات (Polling)
     bot.infinity_polling()
-
