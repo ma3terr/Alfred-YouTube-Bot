@@ -10,7 +10,7 @@ import requests
 # --- ۱. API Key (توکن جدید خود را اینجا قرار دهید) ---
 # ----------------------------------------------------
 # توکن جدید خود را که از بات‌فادر دریافت می‌کنید، اینجا جایگزین کنید:
-BOT_TOKEN = "اینجا_توکن_جدید_را_بنویسید_لطفا" 
+BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD5XnGOtzQs" 
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -226,3 +226,4 @@ if __name__ == '__main__':
     print("Bot is running...")
     # اجرای بی‌نهایت ربات (Polling)
     bot.infinity_polling()
+
