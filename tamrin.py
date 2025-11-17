@@ -53,21 +53,34 @@ def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
             pass
 
 # --------------------------------------
-# --- ۳. تابع ارسال فایل صوتی (اصلاح‌شده) ---
+# --- ۳. تابع ارسال فایل صوتی (اصلاح‌شده برای اینستاگرام و FFmpeg) ---
 # --------------------------------------
 def send_audio_from_url(url, title, initial_message_id, chat_id): 
     
-    # تنظیمات yt-dlp (بدون نیاز به FFmpeg)
+    # تنظیمات yt-dlp (با فعالسازی استخراج صدا از ویدیو)
     ydl_opts = {
-        'format': 'bestaudio', 
+        # تلاش برای دانلود بهترین ویدیو و صدا، یا بهترین فرمت کلی. 
+        # این برای اینستاگرام ضروری است زیرا آنها استریم صوتی جداگانه نمی‌دهند.
+        # پس از دانلود، Postprocessor آن را به MP3 تبدیل خواهد کرد.
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+        
+        # آدرس فایل خروجی قبل از پردازش نهایی (به عنوان ویدیو)
         'outtmpl': f'downloads/{chat_id}_audio_temp.%(ext)s', 
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
-        # اضافه کردن User-Agent برای بهبود شانس دانلود از سایت های سختگیر مانند اینستاگرام
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
-        }
+        },
+        
+        # --- فعالسازی مجدد FFmpeg Postprocessor برای تبدیل به MP3 ---
+        # **توجه: برای کارکرد این بخش، FFmpeg باید در Railway نصب شده باشد.**
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        # -----------------------------------------------------------
     }
 
     audio_file_path = None
@@ -75,21 +88,19 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
     try:
         # پیام 'در حال دانلود'
         escaped_title = escape_markdown_v2(title)
-        edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود آهنگ: *{escaped_title}*...") 
+        edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود و استخراج آهنگ: *{escaped_title}*...") 
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # --- شرط ممنوعیت اینستاگرام حذف شده است تا دانلود انجام شود ---
-            
             os.makedirs('downloads', exist_ok=True) 
 
-            # دانلود
+            # دانلود و تبدیل (این مرحله فایل نهایی .mp3 را تولید می‌کند)
             info_dict = ydl.extract_info(url, download=True)
             
-            # پیدا کردن فایل دانلود شده
-            downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.*")
+            # پیدا کردن فایل دانلود شده (باید .mp3 باشد)
+            downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.mp3")
             if not downloaded_files:
-                # اگر دانلود شکست بخورد، این خطا فعال می‌شود
-                raise Exception("فایل صوتی دانلود نشد. (احتمالاً لینک اینستاگرام مشکل دارد یا خصوصی است.)")
+                # این خط برای اینستاگرام که ممکن است فایل نهایی .mp3 را تولید نکند، حیاتی است
+                raise Exception("فایل صوتی نهایی (.mp3) پیدا نشد. (خطای تبدیل توسط FFmpeg یا لینک نامعتبر)")
                 
             audio_file_path = downloaded_files[0]
             
@@ -127,6 +138,7 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
 
         # ارسال فایل به عنوان سند
         with open(audio_file_path, 'rb') as audio_file:
+            # توجه: send_document برای فایل‌های صوتی با پسوند mp3 و متادیتا مناسب است.
             bot.send_document(
                 chat_id,
                 audio_file,
