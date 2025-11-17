@@ -6,15 +6,18 @@ import glob
 import time
 import requests
 
-# --- ۱. API Key (توکن فعال خود را اینجا قرار دهید) ---
-BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD5XnGOtzQs" # توکن شما از تصویر 04D8CFF6-0B71-4C5F-89AE-616EE3A3D74D.png (تغییر یافته برای حفظ امنیت)
+# ----------------------------------------------------
+# --- ۱. API Key (حتما توکن جدید خود را اینجا قرار دهید) ---
+# ----------------------------------------------------
+BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD5XnGOtzQs" 
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# ------------------------
 # --- ۲. توابع کمکی ---
+# ------------------------
 
 # این تابع، تمام کاراکرهای خاص Markdown V2 را برای نمایش صحیح خنثی (Escape) می‌کند.
-# این کار خطای نمایش: متن با فرمت Markdown قابل نمایش نبود را رفع می‌کند.
 def escape_markdown_v2(text):
     if text is None:
         return ""
@@ -24,7 +27,7 @@ def escape_markdown_v2(text):
     return re.sub(escape_chars, r'\\\1', text)
 
 # تابع ویرایش پیام با مدیریت خطا
-def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
+def edit_message(chat_id, message_id, text):
     try:
         bot.edit_message_text(
             chat_id=chat_id,
@@ -33,11 +36,11 @@ def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
             parse_mode='MarkdownV2'
         )
     except telebot.apihelper.ApiTelegramException as e:
+        # اگر خطا "message is not modified" باشد، یعنی محتوا تکراری است.
         if 'Bad Request: message is not modified' in str(e):
             return
-        # اگر خطای پارسینگ Markdown باشد، متن ساده می‌فرستد.
+        # اگر خطای پارسینگ Markdown باشد، با فرمت ساده ویرایش می‌شود.
         elif "Bad Request: can't parse" in str(e):
-            # اگر پارسینگ شکست خورد، با فرمت ساده (None) سعی می‌کنیم پیام را ویرایش کنیم.
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
@@ -45,23 +48,23 @@ def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
                 parse_mode=None
             )
         else:
+            # خطاهای دیگر را نادیده می‌گیرد
             pass
 
-# --- ۳. تابع ارسال فایل صوتی ---
+# --------------------------------------
+# --- ۳. تابع ارسال فایل صوتی (اصلاح‌شده) ---
+# --------------------------------------
 def send_audio_from_url(url, title, initial_message_id):
     chat_id = initial_message_id.chat.id
     
-    # تنظیمات yt-dlp
+    # تنظیمات yt-dlp (بدون نیاز به FFmpeg)
     ydl_opts = {
-        'format': 'bestaudio/best',
-        # پیکربندی Postprocessor برای تبدیل به MP3
-        # این مرحله نیاز به FFmpeg دارد (که باید در Railway نصب شود)
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        # تنظیم نام فایل برای جلوگیری از تداخل
+        # فقط بهترین فایل صوتی را مستقیماً دانلود می‌کند (بدون تبدیل به MP3 توسط FFmpeg)
+        'format': 'bestaudio', 
+        
+        # **حذف کامل بخش postprocessors که نیاز به FFmpeg داشت**
+        
+        # تنظیم نام فایل
         'outtmpl': f'downloads/{chat_id}_audio_temp.%(ext)s', 
         'noplaylist': True,
         'quiet': True,
@@ -79,11 +82,12 @@ def send_audio_from_url(url, title, initial_message_id):
             if "instagram.com" in url:
                  raise Exception("دانلود اینستاگرام پشتیبانی نمی‌شود. لطفا لینک یوتیوب بفرستید.")
             
-            # **اطمینان از وجود پوشه downloads قبل از شروع دانلود**
             os.makedirs('downloads', exist_ok=True) 
 
+            # دانلود
             info_dict = ydl.extract_info(url, download=True)
             
+            # پیدا کردن فایل دانلود شده (چون فرمت را yt-dlp مشخص می‌کند)
             downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.*")
             if not downloaded_files:
                 raise Exception("نتوانستم فایل دانلود شده را پیدا کنم. (خطای File Find)")
@@ -100,15 +104,13 @@ def send_audio_from_url(url, title, initial_message_id):
             caption = escape_markdown_v2(caption) 
 
     except Exception as e:
-        # **حل خطای نمایش Markdown در پیام‌های خطا**
+        # **مدیریت خطای دانلود**
         error_message = f"❌ خطای دانلود یا ارسال آهنگ: نتوانستم فایل را دانلود کنم. \n دلیل: {str(e)[:250]}"
         try:
-            # حذف پیام اولیه 
             bot.delete_message(chat_id, initial_message_id.message_id)
         except:
             pass 
         
-        # ارسال پیام خطا با parse_mode=None (متن ساده)
         bot.send_message(chat_id, error_message, parse_mode=None) 
         
         if audio_file_path and os.path.exists(audio_file_path):
@@ -121,13 +123,14 @@ def send_audio_from_url(url, title, initial_message_id):
         escaped_final_title = escape_markdown_v2(final_title)
         edit_message(chat_id, initial_message_id.message_id, f"⬆️ در حال ارسال آهنگ: *{escaped_final_title}*...", parse_mode='MarkdownV2')
 
+        # تعیین نوع فایل بر اساس پسوند برای ارسال صحیح
         with open(audio_file_path, 'rb') as audio_file:
-            bot.send_audio(
+            # از آنجا که فایل MP3 نیست، آن را به عنوان سند (document) می‌فرستیم تا مطمئن شویم ارسال می‌شود.
+            bot.send_document(
                 chat_id,
                 audio_file,
                 caption=caption,
-                title=final_title,
-                performer=artist
+                visible_file_name=f"{final_title}.mp3" # نام فایل را در ظاهر mp3 می گذاریم
             )
 
         bot.delete_message(chat_id, initial_message_id.message_id)
@@ -137,10 +140,13 @@ def send_audio_from_url(url, title, initial_message_id):
         bot.send_message(chat_id, error_message, parse_mode=None)
     
     finally:
+        # پاکسازی فایل موقت
         if audio_file_path and os.path.exists(audio_file_path):
             os.remove(audio_file_path)
 
+# ----------------------------------
 # --- ۴. تابع جستجو از متن ---
+# ----------------------------------
 def search_from_text(message, query, initial_message_id):
     chat_id = initial_message_id.chat.id
     
@@ -149,6 +155,7 @@ def search_from_text(message, query, initial_message_id):
 
     try:
         with yt_dlp.YoutubeDL({'quiet': True, 'noplaylist': True, 'no_warnings': True}) as ydl:
+            # جستجوی فقط یک نتیجه (ytsearch1:)
             info_dict = ydl.extract_info(f"ytsearch1:{query}", download=False)
         
         if info_dict and 'entries' and info_dict['entries']:
@@ -159,10 +166,11 @@ def search_from_text(message, query, initial_message_id):
             escaped_video_title = escape_markdown_v2(video_title)
             response = f"✅ نتیجه پیدا شد: \n"
             response += f"عنوان: *{escaped_video_title}*\n"
-            response += f"لینک: {escape_markdown_v2(video_link)}" # لینک را نیز اسکیپ می کنیم
+            response += f"لینک: {escape_markdown_v2(video_link)}"
             
             edit_message(chat_id, initial_message_id.message_id, response, parse_mode='MarkdownV2')
             
+            # شروع دانلود فایل صوتی
             send_audio_from_url(video_link, video_title, initial_message_id)
 
         else:
@@ -172,7 +180,9 @@ def search_from_text(message, query, initial_message_id):
         error_message = f"❌ خطای جستجو: در طول جستجو خطایی رخ داد. \n دلیل: {str(e)[:250]}"
         bot.send_message(chat_id, error_message, parse_mode=None)
 
-# --- ۵. هندلرها ---
+# --------------------------
+# --- ۵. هندلرها و شروع ربات ---
+# --------------------------
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -182,7 +192,6 @@ def send_welcome(message):
 def handle_text(message):
     user_text = message.text
     
-    # پیام اولیه 'در حال شروع فرآیند...'
     initial_msg = bot.send_message(message.chat.id, "⏳ در حال شروع فرآیند...")
     
     # اگر ورودی با 'http' شروع شود، فرض می‌کنیم لینک است
@@ -192,17 +201,15 @@ def handle_text(message):
     
     # در غیر این صورت، جستجو می‌کنیم
     else:
-        # **حل خطای Attribute Error با ارسال شیء message**
         search_from_text(message, user_text, initial_msg)
         
+# --------------------------
 # --- ۶. اجرای ربات ---
+# --------------------------
 
 def cleanup_old_files():
     try:
-        # **حل خطای No such file or directory**
         os.makedirs('downloads', exist_ok=True) 
-        
-        # پاکسازی فایل‌های قدیمی
         for f in glob.glob("downloads/*"):
             os.remove(f)
         print("Cleanup: Old files removed from downloads folder.")
@@ -214,4 +221,3 @@ if __name__ == '__main__':
     print("Bot is running...")
     # اجرای بی‌نهایت ربات (Polling)
     bot.infinity_polling()
-
