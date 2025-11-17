@@ -6,15 +6,18 @@ import glob
 import time
 import requests
 
-# --- ۱. API Key (توکن جدید شما) ---
-BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD5XnGOtzQs" 
+# --- ۱. API Key (توکن فعال خود را اینجا قرار دهید) ---
+BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD2432dsa" # توکن شما از تصویر 04D8CFF6-0B71-4C5F-89AE-616EE3A3D74D.png (تغییر یافته برای حفظ امنیت)
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # --- ۲. توابع کمکی ---
 
 # این تابع، تمام کاراکرهای خاص Markdown V2 را برای نمایش صحیح خنثی (Escape) می‌کند.
+# این کار خطای نمایش: متن با فرمت Markdown قابل نمایش نبود را رفع می‌کند.
 def escape_markdown_v2(text):
+    if text is None:
+        return ""
     # لیست کاراکرهای خاص تلگرام برای Markdown V2
     escape_chars = r'([_*[\]()~>#+=|{}.!-])'
     # کاراکترهای خاص را با یک بک اسلش (\) قبل از آن جایگزین می کند
@@ -27,25 +30,21 @@ def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode=parse_mode
+            parse_mode='MarkdownV2'
         )
     except telebot.apihelper.ApiTelegramException as e:
-        # اگر خطا ناشی از عدم تغییر پیام باشد
         if 'Bad Request: message is not modified' in str(e):
             return
         # اگر خطای پارسینگ Markdown باشد، متن ساده می‌فرستد.
         elif "Bad Request: can't parse" in str(e):
-            # ارسال متن با فرمت ساده به عنوان جایگزین
-            bot.send_message(chat_id, "⚠️ خطا در نمایش متن با فرمت. متن به صورت ساده ارسال شد.")
-            # سعی می کند متن ساده را به جای متن فرمت دار، جایگزین پیام اولیه کند.
+            # اگر پارسینگ شکست خورد، با فرمت ساده (None) سعی می‌کنیم پیام را ویرایش کنیم.
             bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
                 text=text,
-                parse_mode=None 
+                parse_mode=None
             )
         else:
-            # سایر خطاها
             pass
 
 # --- ۳. تابع ارسال فایل صوتی ---
@@ -56,6 +55,7 @@ def send_audio_from_url(url, title, initial_message_id):
     ydl_opts = {
         'format': 'bestaudio/best',
         # پیکربندی Postprocessor برای تبدیل به MP3
+        # این مرحله نیاز به FFmpeg دارد (که باید در Railway نصب شود)
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -77,7 +77,7 @@ def send_audio_from_url(url, title, initial_message_id):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             if "instagram.com" in url:
-                 raise Exception("دانلود اینستاگرام پشتیبانی نمی‌شود\. لطفا لینک یوتیوب بفرستید\.")
+                 raise Exception("دانلود اینستاگرام پشتیبانی نمی‌شود. لطفا لینک یوتیوب بفرستید.")
             
             # **اطمینان از وجود پوشه downloads قبل از شروع دانلود**
             os.makedirs('downloads', exist_ok=True) 
@@ -86,7 +86,7 @@ def send_audio_from_url(url, title, initial_message_id):
             
             downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.*")
             if not downloaded_files:
-                raise Exception("نتوانستم فایل دانلود شده را پیدا کنم\. \(خطای File Find\)")
+                raise Exception("نتوانستم فایل دانلود شده را پیدا کنم. (خطای File Find)")
                 
             audio_file_path = downloaded_files[0]
             
@@ -95,20 +95,21 @@ def send_audio_from_url(url, title, initial_message_id):
             artist = info_dict.get('artist') or info_dict.get('uploader')
             caption = final_title
             if artist:
-                caption = f"{final_title} \- {artist}"
+                caption = f"{final_title} - {artist}"
             
             caption = escape_markdown_v2(caption) 
 
     except Exception as e:
-        # **خطای دانلود را با parse_mode=None می‌فرستیم تا خطای نمایش حذف شود**
-        error_message = f"❌ خطای دانلود یا ارسال آهنگ: نتوانستم فایل را دانلود کنم\. \n دلیل: {str(e)[:250]}"
+        # **حل خطای نمایش Markdown در پیام‌های خطا**
+        error_message = f"❌ خطای دانلود یا ارسال آهنگ: نتوانستم فایل را دانلود کنم. \n دلیل: {str(e)[:250]}"
         try:
             # حذف پیام اولیه 
             bot.delete_message(chat_id, initial_message_id.message_id)
         except:
-             pass 
+            pass 
         
-        bot.send_message(chat_id, error_message, parse_mode=None)
+        # ارسال پیام خطا با parse_mode=None (متن ساده)
+        bot.send_message(chat_id, error_message, parse_mode=None) 
         
         if audio_file_path and os.path.exists(audio_file_path):
             os.remove(audio_file_path)
@@ -132,7 +133,7 @@ def send_audio_from_url(url, title, initial_message_id):
         bot.delete_message(chat_id, initial_message_id.message_id)
         
     except Exception as e:
-        error_message = f"❌ خطای ارسال: نتوانستم فایل را ارسال کنم\. \n دلیل: {str(e)[:250]}"
+        error_message = f"❌ خطای ارسال: نتوانستم فایل را ارسال کنم. \n دلیل: {str(e)[:250]}"
         bot.send_message(chat_id, error_message, parse_mode=None)
     
     finally:
@@ -165,10 +166,10 @@ def search_from_text(message, query, initial_message_id):
             send_audio_from_url(video_link, video_title, initial_message_id)
 
         else:
-            edit_message(chat_id, initial_message_id.message_id, "❌ متأسفانه نتیجه‌ای در جستجو پیدا نشد\.", parse_mode='MarkdownV2')
+            edit_message(chat_id, initial_message_id.message_id, "❌ متأسفانه نتیجه‌ای در جستجو پیدا نشد.", parse_mode='MarkdownV2')
             
     except Exception as e:
-        error_message = f"❌ خطای جستجو: در طول جستجو خطایی رخ داد\. \n دلیل: {str(e)[:250]}"
+        error_message = f"❌ خطای جستجو: در طول جستجو خطایی رخ داد. \n دلیل: {str(e)[:250]}"
         bot.send_message(chat_id, error_message, parse_mode=None)
 
 # --- ۵. هندلرها ---
@@ -191,7 +192,7 @@ def handle_text(message):
     
     # در غیر این صورت، جستجو می‌کنیم
     else:
-        # **اصلاح خطای Attribute Error: شیء message را به تابع می فرستیم**
+        # **حل خطای Attribute Error با ارسال شیء message**
         search_from_text(message, user_text, initial_msg)
         
 # --- ۶. اجرای ربات ---
