@@ -235,3 +235,4 @@ if __name__ == '__main__':
     print("Bot is running...")
     # اجرای بی‌نهایت ربات (Polling)
     bot.infinity_polling()
+
