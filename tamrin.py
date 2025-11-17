@@ -10,7 +10,7 @@ import requests
 # --- ۱. API Key (توکن جدید خود را اینجا قرار دهید) ---
 # ----------------------------------------------------
 # توکن جدید خود را که از بات‌فادر دریافت می‌کنید، اینجا جایگزین کنید:
-BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD5XnGOtzQs" 
+BOT_TOKEN = "توکن_جدید_خود_را_اینجا_بنویسید" 
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -27,14 +27,14 @@ def escape_markdown_v2(text):
     # کاراکترهای خاص را با یک بک اسلش (\) قبل از آن جایگزین می کند
     return re.sub(escape_chars, r'\\\1', text)
 
-# تابع ویرایش پیام با مدیریت خطا
-def edit_message(chat_id, message_id, text):
+# تابع ویرایش پیام با مدیریت خطا (رفع خطای parse_mode)
+def edit_message(chat_id, message_id, text, parse_mode='MarkdownV2'):
     try:
         bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            parse_mode='MarkdownV2'
+            parse_mode=parse_mode
         )
     except telebot.apihelper.ApiTelegramException as e:
         # اگر خطا "message is not modified" باشد، یعنی محتوا تکراری است.
@@ -58,7 +58,7 @@ def edit_message(chat_id, message_id, text):
 # تغییر: chat_id مستقیماً به عنوان ورودی دریافت می‌شود تا خطای Attribute Error رفع شود
 def send_audio_from_url(url, title, initial_message_id, chat_id): 
     
-    # تنظیمات yt-dlp (بدون نیاز به FFmpeg برای رفع خطای not found)
+    # تنظیمات yt-dlp (بدون نیاز به FFmpeg)
     ydl_opts = {
         # فقط بهترین فایل صوتی را مستقیماً دانلود می‌کند (بدون تبدیل)
         'format': 'bestaudio', 
@@ -77,18 +77,21 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
     try:
         # پیام 'در حال دانلود'
         escaped_title = escape_markdown_v2(title)
-        edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود آهنگ: *{escaped_title}*...")
+        edit_message(chat_id, initial_message_id.message_id, f"🎧 در حال دانلود آهنگ: *{escaped_title}*...") 
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            if "instagram.com" in url:
-                 raise Exception("دانلود اینستاگرام پشتیبانی نمی‌شود. لطفا لینک یوتیوب بفرستید.")
+            
+            # --- حذف شرط ممنوعیت اینستاگرام برای تلاش در دانلود ---
+            # if "instagram.com" in url:
+            #     raise Exception("دانلود اینستاگرام پشتیبانی نمی‌شود. لطفا لینک یوتیوب بفرستید.")
+            # ----------------------------------------------------
             
             os.makedirs('downloads', exist_ok=True) 
 
             # دانلود
             info_dict = ydl.extract_info(url, download=True)
             
-            # پیدا کردن فایل دانلود شده (چون فرمت را yt-dlp مشخص می‌کند)
+            # پیدا کردن فایل دانلود شده
             downloaded_files = glob.glob(f"downloads/{chat_id}_audio_temp.*")
             if not downloaded_files:
                 raise Exception("نتوانستم فایل دانلود شده را پیدا کنم. (خطای File Find)")
@@ -125,14 +128,13 @@ def send_audio_from_url(url, title, initial_message_id, chat_id):
         escaped_final_title = escape_markdown_v2(final_title)
         edit_message(chat_id, initial_message_id.message_id, f"⬆️ در حال ارسال آهنگ: *{escaped_final_title}*...")
 
-        # تعیین نوع فایل بر اساس پسوند برای ارسال صحیح
+        # ارسال فایل به عنوان سند
         with open(audio_file_path, 'rb') as audio_file:
-            # فایل را به عنوان سند (document) می‌فرستیم تا مطمئن شویم با هر پسوندی ارسال می‌شود.
             bot.send_document(
                 chat_id,
                 audio_file,
                 caption=caption,
-                visible_file_name=f"{final_title}.mp3" # نام فایل را در ظاهر mp3 می گذاریم
+                visible_file_name=f"{final_title}.mp3"
             )
 
         bot.delete_message(chat_id, initial_message_id.message_id)
@@ -183,12 +185,12 @@ def search_from_text(message, query, initial_message_id, chat_id):
         bot.send_message(chat_id, error_message, parse_mode='MarkdownV2')
 
 # --------------------------
-# --- ۵. هندلرها و شروع ربات (اصلاح‌شده) ---
+# --- ۵. هندلرها و شروع ربات ---
 # --------------------------
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "👋 سلام! لینک آهنگ یوتیوب را بفرستید یا متن جستجو را برای من ارسال کنید.")
+    bot.reply_to(message, "👋 سلام! لینک آهنگ یوتیوب یا اینستاگرام را بفرستید یا متن جستجو را برای من ارسال کنید.")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -215,6 +217,7 @@ def handle_text(message):
 def cleanup_old_files():
     try:
         os.makedirs('downloads', exist_ok=True) 
+        # پاک کردن تمام فایل های قبلی برای تمیزی
         for f in glob.glob("downloads/*"):
             os.remove(f)
         print("Cleanup: Old files removed from downloads folder.")
@@ -226,4 +229,3 @@ if __name__ == '__main__':
     print("Bot is running...")
     # اجرای بی‌نهایت ربات (Polling)
     bot.infinity_polling()
-
