@@ -7,7 +7,7 @@ import time
 
 # --- ۱. API Key ---
 # توکن خود را در خط زیر وارد کنید. (توکن را بدون هیچ فضای خالی در ابتدا یا انتها وارد کنید)
-BOT_TOKEN = "8456082831:AAHIwdxsaqusimIfDBfAPqnEVgTFoZmZFcM" 
+BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD5XnGOtzQs" 
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -192,6 +192,7 @@ time.sleep(1)
 
 # اجرای بی‌نهایت ربات (Polling)
 bot.infinity_polling()
+
 
 
 
