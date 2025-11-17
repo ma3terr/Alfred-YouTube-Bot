@@ -7,7 +7,7 @@ import time
 import requests
 
 # --- ۱. API Key (توکن فعال خود را اینجا قرار دهید) ---
-BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD2432dsa" # توکن شما از تصویر 04D8CFF6-0B71-4C5F-89AE-616EE3A3D74D.png (تغییر یافته برای حفظ امنیت)
+BOT_TOKEN = "8174456001:AAEyKevw90ynCM91tOB3IS-QTD5XnGOtzQs" # توکن شما از تصویر 04D8CFF6-0B71-4C5F-89AE-616EE3A3D74D.png (تغییر یافته برای حفظ امنیت)
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -214,3 +214,4 @@ if __name__ == '__main__':
     print("Bot is running...")
     # اجرای بی‌نهایت ربات (Polling)
     bot.infinity_polling()
+
